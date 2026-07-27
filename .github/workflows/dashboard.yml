@@ -1,0 +1,62 @@
+name: Status dashboard
+
+# Generates the SAM design-library upgrade status dashboard and deploys it to
+# GitHub Pages. Data comes from the public GSA/* epics via `gh api graphql`,
+# authenticated with the workflow's built-in GITHUB_TOKEN (sufficient for
+# public reads). No generated HTML is committed to the repo — the built page
+# is uploaded as a Pages artifact and deployed.
+#
+# This dashboard runs on github.com Actions (not Helix), because the Helix
+# instance has no GitHub-hosted runners; see the coordination repo's ADR.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * *' # daily, 06:17 UTC
+  workflow_dispatch:
+
+# Allow the workflow to read public data and deploy to Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one concurrent deploy; don't cancel an in-flight one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+
+      - name: Run tests
+        run: node --test 'dashboard/*.test.mjs'
+
+      - name: Generate dashboard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node dashboard/generate.mjs dashboard/dist/index.html
+
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: dashboard/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
