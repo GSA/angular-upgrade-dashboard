@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { classifyTracks, orderLibraries, LIBRARIES, renderLibrary, renderPage } from './lib.mjs';
+import { classifyTracks, orderLibraries, LIBRARIES, angularMajor, renderLibrary, renderPage } from './lib.mjs';
 
 // The Angular track is the per-major parent sub-issue rolled up over ITS
 // children — not a flat count of all sub-issues. For ngx-uswds-icons the
@@ -113,14 +113,121 @@ test('a started repo renders Pipeline and Angular rollup badges', () => {
 });
 
 // sam-styles is SCSS-only: its Angular track shows N/A (SCSS), not a rollup.
-test('sam-styles renders Angular as N/A (SCSS)', () => {
-  const html = renderLibrary({
+test('sam-styles renders Angular as N/A (SCSS)', () => {  const html = renderLibrary({
     repo: 'sam-styles',
     angularParentNumber: null,
     epic: { owner: 'GSA', number: 732 },
     subIssues: [{ number: 739, state: 'CLOSED' }],
   });
   assert.match(html, /N\/A\s*\(SCSS\)/);
+});
+
+// angularMajor reads @angular/core from dependencies first, then dev, then
+// peer, and returns just the leading major integer of the range.
+test('angularMajor extracts the major version across dependency sections', () => {
+  assert.equal(
+    angularMajor(JSON.stringify({ dependencies: { '@angular/core': '^17.3.1' } })),
+    17,
+  );
+  assert.equal(
+    angularMajor(JSON.stringify({ devDependencies: { '@angular/core': '~19.2.20' } })),
+    19,
+  );
+  // peer ranges like the publishable sub-packages use are still resolved.
+  assert.equal(
+    angularMajor(JSON.stringify({ peerDependencies: { '@angular/core': '>=17.0.0 <18.0.0' } })),
+    17,
+  );
+  // dependencies wins over peer when both are present.
+  assert.equal(
+    angularMajor(
+      JSON.stringify({
+        dependencies: { '@angular/core': '^19.0.0' },
+        peerDependencies: { '@angular/core': '>=17.0.0 <18.0.0' },
+      }),
+    ),
+    19,
+  );
+});
+
+// angularMajor returns null for absent, empty, or unparseable input rather
+// than throwing — the card then renders "Angular unknown".
+test('angularMajor returns null when Angular is absent or input is bad', () => {
+  assert.equal(angularMajor(null), null);
+  assert.equal(angularMajor(''), null);
+  assert.equal(angularMajor('{ not json'), null);
+  assert.equal(angularMajor(JSON.stringify({ dependencies: { rxjs: '^7.0.0' } })), null);
+});
+
+// A started card shows the repo description and an "Angular N" badge when the
+// version resolved.
+test('a started card renders description and Angular version badge', () => {
+  const html = renderLibrary({
+    repo: 'ngx-uswds-icons',
+    angularParentNumber: 32,
+    epic: { owner: 'GSA', number: 26 },
+    description: 'USWDS icons for Angular',
+    angularVersion: 17,
+    subIssues: [{ number: 32, state: 'OPEN', subIssues: [] }],
+  });
+  assert.match(html, /USWDS icons for Angular/);
+  assert.match(html, /Angular 17/);
+});
+
+// When the version can't be resolved (e.g. sam-ui-elements) the badge reads
+// "Angular unknown" rather than being dropped silently.
+test('an unresolved Angular version renders "Angular unknown"', () => {
+  const html = renderLibrary({
+    repo: 'sam-ui-elements',
+    angularParentNumber: 42,
+    epic: { owner: 'GSA', number: 1 },
+    description: null,
+    angularVersion: null,
+    subIssues: [{ number: 42, state: 'OPEN', subIssues: [] }],
+  });
+  assert.match(html, /Angular unknown/);
+});
+
+// SCSS-only libraries (no Angular parent) show no version badge at all.
+test('a SCSS-only library shows no Angular version badge', () => {
+  const html = renderLibrary({
+    repo: 'sam-styles',
+    angularParentNumber: null,
+    epic: { owner: 'GSA', number: 732 },
+    description: 'SAM Styles',
+    angularVersion: null,
+    subIssues: [{ number: 739, state: 'CLOSED' }],
+  });
+  assert.doesNotMatch(html, /Angular \d|Angular unknown/);
+});
+
+// The live GitHub description wins over the curated fallback when present.
+test('renderDescription prefers the live description over the fallback', () => {
+  const html = renderLibrary({
+    repo: 'ngx-uswds-icons',
+    angularParentNumber: 32,
+    epic: { owner: 'GSA', number: 26 },
+    description: 'Live description from GitHub',
+    fallbackDescription: 'Curated fallback',
+    angularVersion: 17,
+    subIssues: [{ number: 32, state: 'OPEN', subIssues: [] }],
+  });
+  assert.match(html, /Live description from GitHub/);
+  assert.doesNotMatch(html, /Curated fallback/);
+});
+
+// When the repo has no live description, the curated fallback is shown.
+test('renderDescription falls back to the curated description when live is null', () => {
+  const html = renderLibrary({
+    repo: 'ngx-uswds-icons',
+    angularParentNumber: 32,
+    epic: { owner: 'GSA', number: 26 },
+    description: null,
+    fallbackDescription: 'USWDS icons packaged as Angular components.',
+    angularVersion: 17,
+    subIssues: [{ number: 32, state: 'OPEN', subIssues: [] }],
+  });
+  assert.match(html, /USWDS icons packaged as Angular components\./);
 });
 
 // Libraries with no epic filed render as "not started".

@@ -12,7 +12,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { LIBRARIES, orderLibraries, renderPage } from './lib.mjs';
+import { LIBRARIES, angularMajor, orderLibraries, renderPage } from './lib.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -21,6 +21,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const QUERY = `
 query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
+    description
+    packageJson: object(expression: "HEAD:package.json") {
+      ... on Blob { text }
+    }
     issue(number: $number) {
       title
       state
@@ -53,10 +57,13 @@ function fetchEpic(lib) {
     repo: lib.repo,
     number: lib.epic.number,
   });
-  const issue = res?.data?.repository?.issue;
+  const repository = res?.data?.repository;
+  const issue = repository?.issue;
   if (!issue) throw new Error(`No issue for ${lib.repo}#${lib.epic.number}`);
   return {
     ...lib,
+    description: repository.description ?? null,
+    angularVersion: angularMajor(repository.packageJson?.text),
     subIssues: (issue.subIssues?.nodes ?? []).map((n) => ({
       number: n.number,
       state: n.state,

@@ -16,10 +16,21 @@ export const LIBRARIES = [
     order: 1,
     epic: { owner: 'GSA', number: 26 },
     angularParentNumber: 32,
+    // Curated fallback: the GSA repo has no description set and we lack admin
+    // to set it. Used only when the live GitHub description is null.
+    fallbackDescription: 'USWDS icons packaged as Angular components.',
   },
   { repo: 'ngx-uswds', order: 2, epic: null, angularParentNumber: null },
   { repo: 'sam-ui-elements', order: 3, epic: null, angularParentNumber: null },
-  { repo: 'sam-design-system', order: 4, epic: null, angularParentNumber: null },
+  {
+    repo: 'sam-design-system',
+    order: 4,
+    epic: null,
+    angularParentNumber: null,
+    // Curated fallback (see ngx-uswds-icons note above).
+    fallbackDescription:
+      'SAM Design System — the unified Angular component library.',
+  },
 ];
 
 /** Return libraries sorted into dependency order. */
@@ -58,6 +69,34 @@ function rollup(issues) {
   };
 }
 
+/**
+ * Extract the major Angular version from a repo's root package.json text.
+ * Checks `dependencies` → `devDependencies` → `peerDependencies` for
+ * `@angular/core` (the root app pins the build/dev version; publishable
+ * sub-packages only declare a peer range). Returns the leading major integer
+ * of the first range found, or null when Angular isn't present / unparseable.
+ *
+ * @param {string|null|undefined} packageJsonText
+ * @returns {number|null}
+ */
+export function angularMajor(packageJsonText) {
+  if (!packageJsonText) return null;
+  let pkg;
+  try {
+    pkg = JSON.parse(packageJsonText);
+  } catch {
+    return null;
+  }
+  const range =
+    pkg?.dependencies?.['@angular/core'] ??
+    pkg?.devDependencies?.['@angular/core'] ??
+    pkg?.peerDependencies?.['@angular/core'];
+  if (!range) return null;
+  // First integer in the range: `^17.3.1` → 17, `>=17.0.0 <18.0.0` → 17.
+  const match = String(range).match(/\d+/);
+  return match ? Number(match[0]) : null;
+}
+
 function esc(s) {
   return String(s).replace(
     /[&<>"']/g,
@@ -82,12 +121,42 @@ function renderBar(label, roll) {
       </div>`;
 }
 
+/**
+ * Optional description line. Prefers the live GitHub description, falling back
+ * to a curated `fallbackDescription` for repos with none set. Omitted entirely
+ * when neither is available.
+ */
+function renderDescription(lib) {
+  const text = lib.description || lib.fallbackDescription;
+  return text
+    ? `
+      <p class="description">${esc(text)}</p>`
+    : '';
+}
+
+/**
+ * Angular version badge. SCSS-only libraries (no Angular parent) show nothing;
+ * a known major renders "Angular N"; an unresolved version renders "Angular
+ * unknown" so the gap is visible rather than silently dropped.
+ */
+function renderAngularVersion(lib) {
+  if (lib.angularParentNumber === null) return '';
+  const label =
+    typeof lib.angularVersion === 'number'
+      ? `Angular ${lib.angularVersion}`
+      : 'Angular unknown';
+  const cls =
+    typeof lib.angularVersion === 'number' ? 'ng-version' : 'ng-version unknown';
+  return `
+      <span class="${cls}">${esc(label)}</span>`;
+}
+
 /** Render one library card: two tracks when started, else "not started". */
 export function renderLibrary(lib) {
   if (!lib.epic) {
     return `
     <section class="library not-started">
-      <h2>${esc(lib.repo)}</h2>
+      <h2>${esc(lib.repo)}</h2>${renderDescription(lib)}
       <p class="status">not started — no epic yet</p>
     </section>`;
   }
@@ -105,7 +174,7 @@ export function renderLibrary(lib) {
 
   return `
     <section class="library">
-      <h2><a href="${esc(epicUrl)}">${esc(lib.repo)}</a></h2>${renderBar('Pipeline', pipeline)}${angularBar}
+      <h2><a href="${esc(epicUrl)}">${esc(lib.repo)}</a>${renderAngularVersion(lib)}</h2>${renderDescription(lib)}${renderBar('Pipeline', pipeline)}${angularBar}
     </section>`;
 }
 
@@ -126,7 +195,10 @@ export function renderPage(libraries) {
     .meta { color: #666; font-size: 0.85rem; margin-bottom: 2rem; }
     .library { border: 1px solid #ccc; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
     .library.not-started { opacity: 0.65; }
-    .library h2 { margin: 0 0 0.75rem; font-size: 1.1rem; }
+    .library h2 { margin: 0 0 0.5rem; font-size: 1.1rem; display: flex; align-items: baseline; gap: 0.75rem; }
+    .description { margin: 0 0 0.75rem; color: #555; font-size: 0.9rem; }
+    .ng-version { font-size: 0.75rem; font-weight: 600; color: #2e7d32; border: 1px solid #2e7d32; border-radius: 999px; padding: 0.1rem 0.5rem; white-space: nowrap; }
+    .ng-version.unknown { color: #888; border-color: #bbb; font-weight: 500; }
     .track { display: grid; grid-template-columns: 10rem 1fr 4rem; align-items: center; gap: 0.75rem; margin: 0.4rem 0; }
     .track-label { font-weight: 600; }
     .bar { background: #e0e0e0; border-radius: 4px; height: 0.75rem; overflow: hidden; }
