@@ -20,7 +20,12 @@ export const LIBRARIES = [
     // to set it. Used only when the live GitHub description is null.
     fallbackDescription: 'USWDS icons packaged as Angular components.',
   },
-  { repo: 'ngx-uswds', order: 2, epic: null, angularParentNumber: null },
+  {
+    repo: 'ngx-uswds',
+    order: 2,
+    epic: { owner: 'GSA', number: 184 },
+    angularParentNumber: 194,
+  },
   { repo: 'sam-ui-elements', order: 3, epic: null, angularParentNumber: null },
   {
     repo: 'sam-design-system',

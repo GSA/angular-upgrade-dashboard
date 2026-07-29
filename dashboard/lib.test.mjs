@@ -232,7 +232,7 @@ test('renderDescription falls back to the curated description when live is null'
 
 // Libraries with no epic filed render as "not started".
 test('an unstarted repo renders "not started"', () => {
-  const html = renderLibrary({ repo: 'ngx-uswds', epic: null });
+  const html = renderLibrary({ repo: 'sam-ui-elements', epic: null });
   assert.match(html, /not started/i);
   assert.doesNotMatch(html, /role="progressbar"/);
 });
