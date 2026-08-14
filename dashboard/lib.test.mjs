@@ -81,6 +81,36 @@ test('libraries render in dependency order', () => {
   ]);
 });
 
+// sam-ui-elements has no single Angular roll-up parent; the migration is a flat
+// set of direct sub-issues (#573/#574/#575). The Angular track counts those and
+// the Pipeline track counts every OTHER direct sub-issue. Epic #562 has 14
+// direct sub-issues, so Pipeline = 11 and Angular = 3.
+test('classifyTracks counts a flat angularIssueNumbers set as the Angular track', () => {
+  const epic = {
+    angularParentNumber: null,
+    angularIssueNumbers: [573, 574, 575],
+    subIssues: [
+      { number: 563, state: 'OPEN' },
+      { number: 564, state: 'OPEN' },
+      { number: 565, state: 'OPEN' },
+      { number: 566, state: 'OPEN' },
+      { number: 567, state: 'OPEN' },
+      { number: 568, state: 'OPEN' },
+      { number: 569, state: 'OPEN' },
+      { number: 570, state: 'OPEN' },
+      { number: 571, state: 'OPEN' },
+      { number: 572, state: 'OPEN' },
+      { number: 573, state: 'CLOSED' },
+      { number: 574, state: 'OPEN' },
+      { number: 575, state: 'OPEN' },
+      { number: 576, state: 'OPEN' },
+    ],
+  };
+  const { pipeline, angular } = classifyTracks(epic);
+  assert.deepEqual(pipeline, { closed: 0, total: 11 });
+  assert.deepEqual(angular, { closed: 1, total: 3 });
+});
+
 // A started repo shows two track rollups. ngx-uswds-icons: Pipeline 6/8 and
 // Angular 0/4, each as a rollup bar/badge.
 test('a started repo renders Pipeline and Angular rollup badges', () => {
@@ -232,7 +262,7 @@ test('renderDescription falls back to the curated description when live is null'
 
 // Libraries with no epic filed render as "not started".
 test('an unstarted repo renders "not started"', () => {
-  const html = renderLibrary({ repo: 'sam-ui-elements', epic: null });
+  const html = renderLibrary({ repo: 'sam-design-system', epic: null });
   assert.match(html, /not started/i);
   assert.doesNotMatch(html, /role="progressbar"/);
 });

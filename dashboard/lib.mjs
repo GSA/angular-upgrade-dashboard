@@ -26,7 +26,17 @@ export const LIBRARIES = [
     epic: { owner: 'GSA', number: 184 },
     angularParentNumber: 194,
   },
-  { repo: 'sam-ui-elements', order: 3, epic: null, angularParentNumber: null },
+  {
+    repo: 'sam-ui-elements',
+    order: 3,
+    epic: { owner: 'GSA', number: 562 },
+    // Unlike the other epics, sam-ui-elements has no single Angular parent that
+    // rolls up a per-major chain; the migration is spread across three direct
+    // sub-issues (ngx-formly 6→7 gate, 19→20, 20→21). List them so the Angular
+    // track counts those issues and the Pipeline track excludes them.
+    angularParentNumber: null,
+    angularIssueNumbers: [573, 574, 575],
+  },
   {
     repo: 'sam-design-system',
     order: 4,
@@ -45,25 +55,43 @@ export function orderLibraries(libraries) {
 
 /**
  * Split an epic's direct sub-issues into two tracks:
- *  - Angular: the per-major parent sub-issue rolled up over ITS children.
+ *  - Angular: either the per-major parent sub-issue rolled up over ITS
+ *    children (`angularParentNumber`), or a flat set of direct sub-issues
+ *    named by `angularIssueNumbers` (used when the migration isn't a single
+ *    roll-up parent, e.g. sam-ui-elements #573/#574/#575).
  *  - Pipeline: every other direct sub-issue.
  *
- * @param {{ angularParentNumber?: number, subIssues: Array }} epic
+ * @param {{ angularParentNumber?: number, angularIssueNumbers?: number[], subIssues: Array }} epic
  * @returns {{ pipeline: {closed:number,total:number}, angular: {closed:number,total:number}|null }}
  */
 export function classifyTracks(epic) {
   const direct = epic.subIssues ?? [];
+
+  // A flat list of direct sub-issue numbers that make up the Angular track
+  // (used when the migration isn't a single roll-up parent — e.g.
+  // sam-ui-elements splits it across #573/#574/#575).
+  const angularNumbers = new Set(epic.angularIssueNumbers ?? []);
+
   const parent = epic.angularParentNumber
     ? direct.find((i) => i.number === epic.angularParentNumber)
     : undefined;
 
   const pipelineIssues = direct.filter(
-    (i) => i.number !== epic.angularParentNumber,
+    (i) => i.number !== epic.angularParentNumber && !angularNumbers.has(i.number),
   );
+
+  let angular = null;
+  if (parent) {
+    // Per-major parent rolled up over its own children.
+    angular = rollup(parent.subIssues ?? []);
+  } else if (angularNumbers.size > 0) {
+    // Flat set of direct sub-issues counted as the Angular track.
+    angular = rollup(direct.filter((i) => angularNumbers.has(i.number)));
+  }
 
   return {
     pipeline: rollup(pipelineIssues),
-    angular: parent ? rollup(parent.subIssues ?? []) : null,
+    angular,
   };
 }
 
