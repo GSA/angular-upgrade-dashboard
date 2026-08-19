@@ -36,6 +36,10 @@ export const LIBRARIES = [
     // track counts those issues and the Pipeline track excludes them.
     angularParentNumber: null,
     angularIssueNumbers: [573, 574, 575],
+    // The @angular/core pin lives in the test-app, not the repo root — this
+    // library's root package.json declares only Angular tooling. Point the
+    // version lookup at the nested manifest.
+    packageJsonPath: 'test-app/package.json',
   },
   {
     repo: 'sam-design-system',
@@ -168,12 +172,19 @@ function renderDescription(lib) {
 }
 
 /**
- * Angular version badge. SCSS-only libraries (no Angular parent) show nothing;
- * a known major renders "Angular N"; an unresolved version renders "Angular
- * unknown" so the gap is visible rather than silently dropped.
+ * Angular version badge. SCSS-only libraries (no Angular track at all) show
+ * nothing; a known major renders "Angular N"; an unresolved version renders
+ * "Angular unknown" so the gap is visible rather than silently dropped.
+ *
+ * A library is Angular-tracked if it has either a per-major roll-up parent
+ * (`angularParentNumber`) or a flat set of Angular sub-issues
+ * (`angularIssueNumbers`, e.g. sam-ui-elements).
  */
 function renderAngularVersion(lib) {
-  if (lib.angularParentNumber === null) return '';
+  const angularTracked =
+    lib.angularParentNumber != null ||
+    (lib.angularIssueNumbers?.length ?? 0) > 0;
+  if (!angularTracked) return '';
   const label =
     typeof lib.angularVersion === 'number'
       ? `Angular ${lib.angularVersion}`

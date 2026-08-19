@@ -17,12 +17,15 @@ import { LIBRARIES, angularMajor, orderLibraries, renderPage } from './lib.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 // GraphQL: an epic issue, its direct sub-issues, and each sub-issue's own
-// sub-issues (needed for the Angular per-major parent rollup).
+// sub-issues (needed for the Angular per-major parent rollup). The
+// package.json is looked up by a caller-supplied expression so libraries whose
+// @angular/core pin lives outside the repo root (e.g. sam-ui-elements'
+// test-app) can point at the right manifest.
 const QUERY = `
-query($owner: String!, $repo: String!, $number: Int!) {
+query($owner: String!, $repo: String!, $number: Int!, $packageExpression: String!) {
   repository(owner: $owner, name: $repo) {
     description
-    packageJson: object(expression: "HEAD:package.json") {
+    packageJson: object(expression: $packageExpression) {
       ... on Blob { text }
     }
     issue(number: $number) {
@@ -52,10 +55,12 @@ function ghGraphql(variables) {
 }
 
 function fetchEpic(lib) {
+  const packagePath = lib.packageJsonPath ?? 'package.json';
   const res = ghGraphql({
     owner: lib.epic.owner,
     repo: lib.repo,
     number: lib.epic.number,
+    packageExpression: `HEAD:${packagePath}`,
   });
   const repository = res?.data?.repository;
   const issue = repository?.issue;

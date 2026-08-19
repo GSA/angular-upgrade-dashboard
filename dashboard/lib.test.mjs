@@ -204,11 +204,11 @@ test('a started card renders description and Angular version badge', () => {
   assert.match(html, /Angular 17/);
 });
 
-// When the version can't be resolved (e.g. sam-ui-elements) the badge reads
-// "Angular unknown" rather than being dropped silently.
+// When the version can't be resolved the badge reads "Angular unknown" rather
+// than being dropped silently.
 test('an unresolved Angular version renders "Angular unknown"', () => {
   const html = renderLibrary({
-    repo: 'sam-ui-elements',
+    repo: 'ngx-uswds',
     angularParentNumber: 42,
     epic: { owner: 'GSA', number: 1 },
     description: null,
@@ -216,6 +216,26 @@ test('an unresolved Angular version renders "Angular unknown"', () => {
     subIssues: [{ number: 42, state: 'OPEN', subIssues: [] }],
   });
   assert.match(html, /Angular unknown/);
+});
+
+// sam-ui-elements is Angular-tracked via a flat set of sub-issues
+// (angularIssueNumbers), not a roll-up parent. Its version badge must still
+// render — the pin lives in test-app/package.json, resolved by generate.mjs.
+test('a flat-set Angular library (angularIssueNumbers) renders its version badge', () => {
+  const html = renderLibrary({
+    repo: 'sam-ui-elements',
+    angularParentNumber: null,
+    angularIssueNumbers: [573, 574, 575],
+    epic: { owner: 'GSA', number: 562 },
+    description: null,
+    angularVersion: 19,
+    subIssues: [
+      { number: 573, state: 'CLOSED' },
+      { number: 574, state: 'OPEN' },
+      { number: 575, state: 'OPEN' },
+    ],
+  });
+  assert.match(html, /Angular 19/);
 });
 
 // SCSS-only libraries (no Angular parent) show no version badge at all.
