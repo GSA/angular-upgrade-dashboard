@@ -10,6 +10,15 @@ export const LIBRARIES = [
     order: 0,
     epic: { owner: 'GSA', number: 732 },
     angularParentNumber: null, // SCSS only — Angular N/A per ADR-0002
+    metrics: {
+      // Deliberately null, not unconfigured: sam-styles measures
+      // component/story smoke coverage (`scripts/coverage-report.mjs
+      // --threshold=90`), a different metric from line coverage, and commits
+      // no result file. Reported as "not published" until it does.
+      coverage: null,
+      lint: null, // stylelint runs in CI but commits no debt baseline
+      a11y: true, // playwright.a11y.config.mjs — WCAG 2.1 AA gate
+    },
   },
   {
     repo: 'ngx-uswds-icons',
@@ -19,12 +28,25 @@ export const LIBRARIES = [
     // Curated fallback: the GSA repo has no description set and we lack admin
     // to set it. Used only when the live GitHub description is null.
     fallbackDescription: 'USWDS icons packaged as Angular components.',
+    metrics: {
+      // No coverage-floor.json yet; the committed badge SVG carries the real
+      // measured number in its aria-label. Parsed rather than dropped so the
+      // grid keeps a number here; a follow-up asks the repo to commit a floor.
+      coverage: { kind: 'badge', path: '.github/badges/coverage.svg' },
+      lint: null, // eslint runs in CI but commits no debt baseline
+      a11y: false, // Playwright smoke test only, no axe/WCAG gate
+    },
   },
   {
     repo: 'ngx-uswds',
     order: 2,
     epic: { owner: 'GSA', number: 184 },
     angularParentNumber: 194,
+    metrics: {
+      coverage: { kind: 'floor', path: 'coverage-floor.json' },
+      lint: null, // ng lint runs in CI but commits no debt baseline
+      a11y: true, // playwright.a11y.config.ts — WCAG 2.1 AA gate
+    },
   },
   {
     repo: 'sam-ui-elements',
@@ -40,6 +62,14 @@ export const LIBRARIES = [
     // library's root package.json declares only Angular tooling. Point the
     // version lookup at the nested manifest.
     packageJsonPath: 'test-app/package.json',
+    metrics: {
+      coverage: { kind: 'floor', path: 'coverage-floor.json' },
+      // The only repo with a committed lint debt baseline. Warnings only —
+      // check-lint-baseline.mjs fails on ANY error, so errors are 0 by
+      // construction on the default branch. Ratchets down only.
+      lint: { kind: 'eslint-baseline', path: 'eslint-baseline.json' },
+      a11y: false, // no axe/WCAG gate yet
+    },
   },
   {
     repo: 'sam-design-system',
@@ -49,8 +79,16 @@ export const LIBRARIES = [
     // Curated fallback (see ngx-uswds-icons note above).
     fallbackDescription:
       'SAM Design System — the unified Angular component library.',
+    // Not yet instrumented: CircleCI, no committed metrics, no upgrade epic,
+    // and nothing shipped on the default branch since 2025-01. Kept in the
+    // grid as an all-"not published" row because that staleness is itself the
+    // finding — dropping the row would hide it.
+    metrics: { coverage: null, lint: null, a11y: false },
   },
 ];
+
+/** Column order of the four ratchet metrics in a coverage-floor.json. */
+export const COVERAGE_METRICS = ['statements', 'branches', 'functions', 'lines'];
 
 /** Return libraries sorted into dependency order. */
 export function orderLibraries(libraries) {
@@ -132,6 +170,139 @@ export function angularMajor(packageJsonText) {
   // First integer in the range: `^17.3.1` → 17, `>=17.0.0 <18.0.0` → 17.
   const match = String(range).match(/\d+/);
   return match ? Number(match[0]) : null;
+}
+
+// ── Quality metrics ────────────────────────────────────────────────────────
+//
+// Every metric cell resolves to exactly one of three states, and keeping them
+// distinct is the whole point of this grid:
+//
+//   'value'         — a real number/answer we can report
+//   'not-published' — the library declared `null`, i.e. a human verified there
+//                     is no committed source. NEVER rendered as 0: a missing
+//                     number shown as "0%" in a monthly report misrepresents a
+//                     repo that does run the check.
+//   'missing'       — a source WAS declared but could not be read or parsed.
+//                     Rendered as a visible warning and surfaced to the run
+//                     summary, so config rot can't hide behind
+//                     "not published".
+
+/**
+ * Resolve the coverage cell from the declared source plus the raw blob text
+ * fetched for it (`lib.coverageSource`, null when the blob doesn't exist).
+ *
+ * We report the CI-ENFORCED FLOOR, not measured actuals: the floor is what the
+ * ratchet guarantees can't regress, and it's readable from a committed file
+ * with no cross-repo Actions credential. `lines` is the headline because every
+ * badge in this org is lines-derived; the other three ride along as secondary
+ * text so nobody can claim we cherry-picked the flattering metric.
+ */
+export function resolveCoverage(lib) {
+  const decl = lib.metrics?.coverage ?? null;
+  if (decl === null) return { state: 'not-published' };
+
+  const text = lib.coverageSource;
+  if (text == null) {
+    return { state: 'missing', reason: `coverage source ${decl.path} not found` };
+  }
+
+  if (decl.kind === 'floor') {
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return { state: 'missing', reason: `coverage source ${decl.path} is not valid JSON` };
+    }
+    if (typeof parsed?.lines !== 'number') {
+      return { state: 'missing', reason: `coverage source ${decl.path} has no numeric "lines"` };
+    }
+    const breakdown = COVERAGE_METRICS.filter(
+      (m) => m !== 'lines' && typeof parsed[m] === 'number',
+    ).map((m) => `${m} ${parsed[m]}%`);
+    return { state: 'value', kind: 'floor', lines: parsed.lines, breakdown };
+  }
+
+  if (decl.kind === 'badge') {
+    // The badge SVG is generated, so this parse is the brittle part of the
+    // whole design. A test pins the format; if `coverage-badges` ever changes
+    // its template this fails loudly as 'missing' rather than silently
+    // degrading to "not published" and quietly dropping a number.
+    const match = String(text).match(/aria-label="coverage:\s*([\d.]+)%"/);
+    if (!match) {
+      return { state: 'missing', reason: `coverage badge ${decl.path} has no parseable aria-label` };
+    }
+    return { state: 'value', kind: 'actual', lines: Number(match[1]), breakdown: [] };
+  }
+
+  return { state: 'missing', reason: `unknown coverage kind "${decl.kind}"` };
+}
+
+/**
+ * Resolve the lint cell. The baseline counts WARNINGS only — the upstream gate
+ * (`check-lint-baseline.mjs`) fails on any ESLint error, so errors are 0 by
+ * construction on a green default branch. Per-workspace counts are summed so
+ * the row stays comparable with the others; the split is a library-internal
+ * detail that belongs in its epic, not a five-repo comparison table.
+ */
+export function resolveLint(lib) {
+  const decl = lib.metrics?.lint ?? null;
+  if (decl === null) return { state: 'not-published' };
+
+  const text = lib.lintSource;
+  if (text == null) {
+    return { state: 'missing', reason: `lint source ${decl.path} not found` };
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { state: 'missing', reason: `lint source ${decl.path} is not valid JSON` };
+  }
+
+  const counts = Object.values(parsed).filter((v) => typeof v === 'number');
+  if (counts.length === 0) {
+    return { state: 'missing', reason: `lint source ${decl.path} has no numeric workspace counts` };
+  }
+  return {
+    state: 'value',
+    warnings: counts.reduce((a, b) => a + b, 0),
+  };
+}
+
+/** Resolve the a11y cell. Boolean and declared — derived from each repo's
+ *  playwright a11y config plus its `test:a11y` script during config review. */
+export function resolveA11y(lib) {
+  return lib.metrics?.a11y === true
+    ? { state: 'value', enforced: true }
+    : { state: 'value', enforced: false };
+}
+
+/** All resolved cells for one library, plus its last-shipped-commit date. */
+export function resolveMetrics(lib) {
+  return {
+    repo: lib.repo,
+    coverage: resolveCoverage(lib),
+    lint: resolveLint(lib),
+    a11y: resolveA11y(lib),
+    lastCommit: lib.lastCommitDate ?? null,
+  };
+}
+
+/**
+ * Every 'missing' cell across all libraries, as human-readable warnings.
+ * generate.mjs writes these to stderr and $GITHUB_STEP_SUMMARY but still exits
+ * 0: a broken metric source must not fail the daily build, because the epic
+ * cards (and the stakeholder's link) are still perfectly good.
+ */
+export function collectMetricWarnings(libraries) {
+  const warnings = [];
+  for (const lib of orderLibraries(libraries)) {
+    for (const cell of [resolveCoverage(lib), resolveLint(lib)]) {
+      if (cell.state === 'missing') warnings.push(`${lib.repo}: ${cell.reason}`);
+    }
+  }
+  return warnings;
 }
 
 function esc(s) {
@@ -222,10 +393,105 @@ export function renderLibrary(lib) {
     </section>`;
 }
 
+/** Format an ISO timestamp as a bare YYYY-MM-DD date, or a dash when absent. */
+function isoDate(iso) {
+  return typeof iso === 'string' && iso.length >= 10 ? iso.slice(0, 10) : '—';
+}
+
+/** A cell's headline text plus optional secondary line, as table-cell HTML. */
+function renderCell(headline, secondary, cls = '') {
+  const second = secondary
+    ? `\n          <span class="cell-detail">${esc(secondary)}</span>`
+    : '';
+  return `<td${cls ? ` class="${cls}"` : ''}>${esc(headline)}${second}</td>`;
+}
+
+function renderCoverageCell(cell) {
+  if (cell.state === 'not-published') {
+    return renderCell('not published', null, 'unpublished');
+  }
+  if (cell.state === 'missing') {
+    return renderCell('⚠ source missing', null, 'broken');
+  }
+  const label = cell.kind === 'floor' ? `${cell.lines}% floor` : `${cell.lines}% actual`;
+  return renderCell(label, cell.breakdown.length ? cell.breakdown.join(' · ') : null);
+}
+
+function renderLintCell(cell) {
+  if (cell.state === 'not-published') {
+    return renderCell('not published', null, 'unpublished');
+  }
+  if (cell.state === 'missing') {
+    return renderCell('⚠ source missing', null, 'broken');
+  }
+  return renderCell(
+    `${cell.warnings.toLocaleString('en-US')} baseline warnings`,
+    '0 errors',
+  );
+}
+
+function renderA11yCell(cell) {
+  return cell.enforced
+    ? renderCell('WCAG 2.1 AA enforced', null)
+    : renderCell('not enforced', null, 'unpublished');
+}
+
+/** One table row per library. */
+function renderMetricsRow(lib) {
+  const m = resolveMetrics(lib);
+  return `      <tr>
+        <th scope="row">${esc(m.repo)}</th>
+        ${renderCoverageCell(m.coverage)}
+        ${renderLintCell(m.lint)}
+        ${renderA11yCell(m.a11y)}
+        <td>${esc(isoDate(m.lastCommit))}</td>
+      </tr>`;
+}
+
+/**
+ * The cross-repo quality grid. Deliberately a real <table> with a <caption>
+ * and scoped headers, not a CSS-grid div soup — it would be embarrassing to
+ * ship an inaccessible accessibility report. The "as of" date lives in the
+ * caption so it travels with a copy-paste into a monthly report rather than
+ * being lost when only the table is copied.
+ */
+export function renderMetricsTable(libraries, generated) {
+  const rows = orderLibraries(libraries).map(renderMetricsRow).join('\n');
+  return `  <h2 id="metrics">Quality metrics</h2>
+  <table class="metrics">
+    <caption>Public <code>GSA/*</code> design libraries — quality snapshot as of ${esc(isoDate(generated))}.</caption>
+    <thead>
+      <tr>
+        <th scope="col">Library</th>
+        <th scope="col">Coverage (lines)</th>
+        <th scope="col">Lint debt</th>
+        <th scope="col">Accessibility gate</th>
+        <th scope="col">Last release-branch commit</th>
+      </tr>
+    </thead>
+    <tbody>
+${rows}
+    </tbody>
+  </table>
+  <dl class="legend">
+    <dt>floor</dt>
+    <dd>The coverage percentage CI enforces as a ratchet; measured coverage is at or above it and cannot regress below it.</dd>
+    <dt>actual</dt>
+    <dd>The measured coverage percentage published by the repository.</dd>
+    <dt>not published</dt>
+    <dd>The repository does not commit a machine-readable result for this metric. It does not mean the check is absent — see the linked epic for what CI actually runs.</dd>
+    <dt>baseline warnings</dt>
+    <dd>Recorded ESLint warning debt. The baseline is a ratchet that can only decrease, so a falling number across months is the progress signal. Any lint <em>error</em> fails CI outright, so errors are zero on a green branch.</dd>
+    <dt>⚠ source missing</dt>
+    <dd>A metric source was expected here but could not be read — a dashboard configuration problem, not a repository one.</dd>
+  </dl>`;
+}
+
 /** Assemble the full self-contained HTML page. */
 export function renderPage(libraries) {
   const generated = new Date().toISOString();
   const cards = orderLibraries(libraries).map(renderLibrary).join('\n');
+  const metrics = renderMetricsTable(libraries, generated);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -250,12 +516,25 @@ export function renderPage(libraries) {
     .count { text-align: right; font-variant-numeric: tabular-nums; }
     .na { color: #888; font-style: italic; }
     .status { margin: 0; }
+    h2#metrics { margin: 2.5rem 0 0.5rem; font-size: 1.1rem; }
+    table.metrics { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    table.metrics caption { caption-side: top; text-align: left; color: #555; font-size: 0.85rem; margin-bottom: 0.5rem; }
+    table.metrics th, table.metrics td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #ddd; vertical-align: top; }
+    table.metrics thead th { border-bottom: 2px solid #999; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.02em; }
+    table.metrics th[scope='row'] { font-family: ui-monospace, monospace; font-weight: 600; }
+    .cell-detail { display: block; color: #666; font-size: 0.78rem; margin-top: 0.15rem; }
+    td.unpublished { color: #777; font-style: italic; }
+    td.broken { color: #b3261e; font-weight: 600; }
+    .legend { font-size: 0.8rem; color: #555; margin-top: 1rem; }
+    .legend dt { font-weight: 600; margin-top: 0.5rem; }
+    .legend dd { margin: 0.1rem 0 0 1rem; }
   </style>
 </head>
 <body>
   <h1>SAM design-library Angular upgrade</h1>
   <p class="meta">Public <code>GSA/*</code> epics, in dependency order. Generated ${esc(generated)}.</p>
 ${cards}
+${metrics}
 </body>
 </html>
 `;

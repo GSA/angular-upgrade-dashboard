@@ -20,6 +20,43 @@ runs **here on github.com** because:
 and on demand (`workflow_dispatch`). It runs the tests, generates the page with
 the built-in `GITHUB_TOKEN` (public reads only), and deploys it to Pages.
 
+## Quality metrics grid
+
+Below the epic cards, the page publishes a cross-repo quality snapshot at
+`#metrics` — coverage, lint debt, accessibility gate, and last release-branch
+commit, one row per library. It is built in the same daily run and the same
+GraphQL query as the cards, so it costs no extra API calls and no new
+credential.
+
+Metrics are read **only from files each repo commits** (`coverage-floor.json`,
+`.github/badges/coverage.svg`, `eslint-baseline.json`). We deliberately do *not*
+download CI artifacts: that would need a long-lived cross-org PAT with
+`actions:read`, and this repo's whole security posture is "public reads with the
+built-in token." The tradeoff is that we report the **CI-enforced floor** rather
+than measured actuals — a stronger claim anyway, since the ratchet guarantees
+coverage cannot regress below it.
+
+Each metric source is declared explicitly per library in `LIBRARIES.metrics`.
+Three cell states are kept strictly distinct:
+
+| cell | meaning |
+| --- | --- |
+| a number | read from the declared source |
+| `not published` | declared `null` — a human verified there is no committed source. **Never rendered as `0`**: a missing number shown as 0% would misrepresent a repo that does run the check. |
+| `⚠ source missing` | a source *was* declared but couldn't be read or parsed — a dashboard config problem, not a repo one. |
+
+A `⚠ source missing` cell warns to stderr and `$GITHUB_STEP_SUMMARY` but exits
+`0`: a broken metric source must not fail the daily build, because the cards and
+the published link are still good.
+
+The grid is a real `<table>` with a `<caption>` and scoped headers rather than a
+CSS-grid of `div`s — it would be embarrassing to ship an inaccessible
+accessibility report. The "as of" date lives in the caption so it travels with a
+copy-paste into a monthly report.
+
+There is no history: the page always shows today. A dated-snapshot archive for
+month-over-month deltas is deliberately deferred.
+
 ```bash
 # Local run (uses your existing `gh auth` for github.com):
 node dashboard/generate.mjs /tmp/index.html

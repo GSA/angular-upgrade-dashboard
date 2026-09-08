@@ -1,7 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { classifyTracks, orderLibraries, LIBRARIES, angularMajor, renderLibrary, renderPage } from './lib.mjs';
+import {
+  classifyTracks,
+  orderLibraries,
+  LIBRARIES,
+  angularMajor,
+  renderLibrary,
+  renderPage,
+  resolveCoverage,
+  resolveLint,
+  resolveA11y,
+  collectMetricWarnings,
+  renderMetricsTable,
+} from './lib.mjs';
 
 // The Angular track is the per-major parent sub-issue rolled up over ITS
 // children — not a flat count of all sub-issues. For ngx-uswds-icons the
@@ -307,4 +319,200 @@ test('renderPage emits all five libraries in dependency order', () => {
   assert.ok(positions.every((p) => p !== -1), 'all libraries present');
   assert.deepEqual([...positions].sort((a, b) => a - b), positions);
   assert.match(page, /<!doctype html>/i);
+});
+
+// ── Quality metrics grid ────────────────────────────────────────────────────
+
+// The three cell states must stay distinguishable. This is the core invariant
+// of the grid: "verified absent" and "we failed to read it" are different
+// facts, and neither may ever render as 0.
+test('a declared coverage floor resolves to a value with a lines headline', () => {
+  const cell = resolveCoverage({
+    metrics: { coverage: { kind: 'floor', path: 'coverage-floor.json' } },
+    coverageSource: JSON.stringify({
+      statements: 88.73,
+      branches: 78.65,
+      functions: 85.9,
+      lines: 88.72,
+    }),
+  });
+  assert.equal(cell.state, 'value');
+  assert.equal(cell.kind, 'floor');
+  assert.equal(cell.lines, 88.72);
+  // lines is the headline, so it must not be repeated in the secondary text.
+  assert.deepEqual(cell.breakdown, [
+    'statements 88.73%',
+    'branches 78.65%',
+    'functions 85.9%',
+  ]);
+});
+
+test('a null coverage declaration resolves to not-published, never zero', () => {
+  const cell = resolveCoverage({ metrics: { coverage: null } });
+  assert.equal(cell.state, 'not-published');
+  assert.equal(cell.lines, undefined);
+});
+
+// A declared-but-unreadable source must be loud. If this degraded to
+// 'not-published' a config typo would read as "this repo has no coverage" and
+// nobody would notice for a month.
+test('a declared coverage source that is absent resolves to missing, not not-published', () => {
+  const cell = resolveCoverage({
+    metrics: { coverage: { kind: 'floor', path: 'coverage-floor.json' } },
+    coverageSource: null,
+  });
+  assert.equal(cell.state, 'missing');
+  assert.match(cell.reason, /coverage-floor\.json not found/);
+});
+
+test('a malformed coverage floor resolves to missing', () => {
+  const bad = resolveCoverage({
+    metrics: { coverage: { kind: 'floor', path: 'coverage-floor.json' } },
+    coverageSource: 'not json{',
+  });
+  assert.equal(bad.state, 'missing');
+
+  const noLines = resolveCoverage({
+    metrics: { coverage: { kind: 'floor', path: 'coverage-floor.json' } },
+    coverageSource: JSON.stringify({ statements: 90 }),
+  });
+  assert.equal(noLines.state, 'missing');
+  assert.match(noLines.reason, /no numeric "lines"/);
+});
+
+// The badge parse is the most brittle read in the design (generated SVG), so
+// pin the exact format we depend on from `coverage-badges`.
+test('a coverage badge SVG yields the measured actual percentage', () => {
+  const cell = resolveCoverage({
+    metrics: { coverage: { kind: 'badge', path: '.github/badges/coverage.svg' } },
+    coverageSource:
+      '<svg width="103.3" role="img" aria-label="coverage: 100%">\n<title>coverage: 100%</title></svg>',
+  });
+  assert.equal(cell.state, 'value');
+  assert.equal(cell.kind, 'actual');
+  assert.equal(cell.lines, 100);
+});
+
+test('a coverage badge whose label format changed resolves to missing', () => {
+  const cell = resolveCoverage({
+    metrics: { coverage: { kind: 'badge', path: '.github/badges/coverage.svg' } },
+    coverageSource: '<svg aria-label="cov 100 pct"></svg>',
+  });
+  assert.equal(cell.state, 'missing');
+});
+
+// Per-workspace warning counts are summed so the row stays comparable with the
+// other libraries; sam-ui-elements is {root: 1619, test-app: 4} = 1623.
+test('lint baseline sums per-workspace warning counts', () => {
+  const cell = resolveLint({
+    metrics: { lint: { kind: 'eslint-baseline', path: 'eslint-baseline.json' } },
+    lintSource: JSON.stringify({ root: 1619, 'test-app': 4 }),
+  });
+  assert.equal(cell.state, 'value');
+  assert.equal(cell.warnings, 1623);
+});
+
+test('a null lint declaration resolves to not-published', () => {
+  assert.equal(resolveLint({ metrics: { lint: null } }).state, 'not-published');
+});
+
+test('a11y resolves from the declared boolean', () => {
+  assert.equal(resolveA11y({ metrics: { a11y: true } }).enforced, true);
+  assert.equal(resolveA11y({ metrics: { a11y: false } }).enforced, false);
+  assert.equal(resolveA11y({ metrics: {} }).enforced, false);
+});
+
+// Warnings must be collected for the run summary, but only for genuinely
+// broken sources — an intentional null is not a warning.
+test('collectMetricWarnings reports broken sources but not intentional nulls', () => {
+  const warnings = collectMetricWarnings([
+    { repo: 'clean', order: 0, metrics: { coverage: null, lint: null, a11y: true } },
+    {
+      repo: 'broken',
+      order: 1,
+      metrics: {
+        coverage: { kind: 'floor', path: 'coverage-floor.json' },
+        lint: { kind: 'eslint-baseline', path: 'eslint-baseline.json' },
+        a11y: false,
+      },
+      coverageSource: null,
+      lintSource: null,
+    },
+  ]);
+  assert.equal(warnings.length, 2);
+  assert.ok(warnings.every((w) => w.startsWith('broken:')));
+});
+
+// The grid is an accessibility report, so its own markup has to be correct:
+// a real table with a caption and scoped headers, not a div grid.
+test('the metrics table uses accessible table semantics with a dated caption', () => {
+  const html = renderMetricsTable(
+    [{ repo: 'demo', order: 0, metrics: { coverage: null, lint: null, a11y: true } }],
+    '2026-09-08T12:00:00.000Z',
+  );
+  assert.match(html, /<h2 id="metrics">Quality metrics<\/h2>/);
+  assert.match(html, /<caption>.*as of 2026-09-08\.<\/caption>/);
+  assert.match(html, /<th scope="col">Coverage \(lines\)<\/th>/);
+  assert.match(html, /<th scope="col">Last release-branch commit<\/th>/);
+  assert.match(html, /<th scope="row">demo<\/th>/);
+  // No CSS-grid div soup standing in for a table.
+  assert.doesNotMatch(html, /role="table"/);
+});
+
+test('the metrics table renders each cell state distinctly', () => {
+  const html = renderMetricsTable(
+    [
+      {
+        repo: 'floored',
+        order: 0,
+        metrics: { coverage: { kind: 'floor', path: 'coverage-floor.json' }, lint: null, a11y: true },
+        coverageSource: JSON.stringify({ statements: 94, branches: 91, functions: 90, lines: 94 }),
+        lastCommitDate: '2026-09-04T18:57:04Z',
+      },
+      {
+        repo: 'absent',
+        order: 1,
+        metrics: { coverage: null, lint: null, a11y: false },
+        lastCommitDate: '2025-01-31T14:46:13Z',
+      },
+      {
+        repo: 'rotten',
+        order: 2,
+        metrics: { coverage: { kind: 'floor', path: 'coverage-floor.json' }, lint: null, a11y: false },
+        coverageSource: null,
+      },
+    ],
+    '2026-09-08T12:00:00.000Z',
+  );
+  assert.match(html, /94% floor/);
+  assert.match(html, /statements 94% · branches 91% · functions 90%/);
+  assert.match(html, /WCAG 2\.1 AA enforced/);
+  assert.match(html, /not enforced/);
+  assert.match(html, /not published/);
+  assert.match(html, /⚠ source missing/);
+  // Last release-branch commit renders as a bare date, and staleness shows.
+  assert.match(html, /<td>2026-09-04<\/td>/);
+  assert.match(html, /<td>2025-01-31<\/td>/);
+  // The cardinal rule: a missing metric is never reported as 0%.
+  assert.doesNotMatch(html, /\b0%/);
+});
+
+test('renderPage includes the metrics table and its legend', () => {
+  const html = renderPage([
+    { repo: 'solo', order: 0, epic: null, metrics: { coverage: null, lint: null, a11y: false } },
+  ]);
+  assert.match(html, /id="metrics"/);
+  assert.match(html, /<dt>not published<\/dt>/);
+  assert.match(html, /ratchet that can only decrease/);
+});
+
+// Every real library must declare its metric sources explicitly — an
+// undeclared `metrics` key would silently render as three not-published cells.
+test('every library declares an explicit metrics block', () => {
+  for (const lib of LIBRARIES) {
+    assert.ok(lib.metrics, `${lib.repo} is missing a metrics declaration`);
+    assert.ok('coverage' in lib.metrics, `${lib.repo} must declare coverage (or null)`);
+    assert.ok('lint' in lib.metrics, `${lib.repo} must declare lint (or null)`);
+    assert.equal(typeof lib.metrics.a11y, 'boolean', `${lib.repo} must declare a11y`);
+  }
 });
