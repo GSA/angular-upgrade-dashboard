@@ -16,7 +16,7 @@ export const LIBRARIES = [
       // --threshold=90`), a different metric from line coverage, and commits
       // no result file. Reported as "not published" until it does.
       coverage: null,
-      lint: null, // stylelint runs in CI but commits no debt baseline
+      lint: true, // stylelint runs in CI (test.yml) but commits no debt baseline — GSA/sam-styles#823
       a11y: true, // playwright.a11y.config.mjs — WCAG 2.1 AA gate
     },
   },
@@ -33,7 +33,7 @@ export const LIBRARIES = [
       // measured number in its aria-label. Parsed rather than dropped so the
       // grid keeps a number here; a follow-up asks the repo to commit a floor.
       coverage: { kind: 'badge', path: '.github/badges/coverage.svg' },
-      lint: null, // eslint runs in CI but commits no debt baseline
+      lint: true, // eslint runs in CI (ci.yml) but commits no debt baseline — GSA/ngx-uswds-icons#124
       a11y: false, // Playwright smoke test only, no axe/WCAG gate
     },
   },
@@ -44,7 +44,7 @@ export const LIBRARIES = [
     angularParentNumber: 194,
     metrics: {
       coverage: { kind: 'floor', path: 'coverage-floor.json' },
-      lint: null, // ng lint runs in CI but commits no debt baseline
+      lint: true, // ng lint runs in CI (ci.yaml) but commits no debt baseline — GSA/ngx-uswds#296
       a11y: true, // playwright.a11y.config.ts — WCAG 2.1 AA gate
     },
   },
@@ -243,10 +243,22 @@ export function resolveCoverage(lib) {
  * construction on a green default branch. Per-workspace counts are summed so
  * the row stays comparable with the others; the split is a library-internal
  * detail that belongs in its epic, not a five-repo comparison table.
+ *
+ * `metrics.lint` can be:
+ *   - a declared source ({kind, path})        → a real warning count
+ *   - `true`  (lint runs, no committed count)  → 'enforced' — not published,
+ *     but distinct from a repo running no lint at all
+ *   - `false` / `null` (no lint check exists)  → 'not-published'
+ *
+ * This keeps "we don't measure this" (enforced) distinct from "there is
+ * nothing to measure" (not-published) — see sub-issues filed against
+ * sam-styles, ngx-uswds, and ngx-uswds-icons to close the `enforced` gap by
+ * committing a real baseline.
  */
 export function resolveLint(lib) {
   const decl = lib.metrics?.lint ?? null;
-  if (decl === null) return { state: 'not-published' };
+  if (decl === true) return { state: 'enforced' };
+  if (decl === null || decl === false) return { state: 'not-published' };
 
   const text = lib.lintSource;
   if (text == null) {
@@ -418,6 +430,9 @@ function renderCoverageCell(cell) {
 }
 
 function renderLintCell(cell) {
+  if (cell.state === 'enforced') {
+    return renderCell('lint enforced', 'no debt baseline published');
+  }
   if (cell.state === 'not-published') {
     return renderCell('not published', null, 'unpublished');
   }
@@ -480,6 +495,8 @@ ${rows}
     <dd>The measured coverage percentage published by the repository.</dd>
     <dt>not published</dt>
     <dd>The repository does not commit a machine-readable result for this metric. It does not mean the check is absent — see the linked epic for what CI actually runs.</dd>
+    <dt>lint enforced</dt>
+    <dd>The repository runs a lint check in CI, but does not yet commit a machine-readable debt count. See the linked epic for a tracking issue.</dd>
     <dt>baseline warnings</dt>
     <dd>Recorded ESLint warning debt. The baseline is a ratchet that can only decrease, so a falling number across months is the progress signal. Any lint <em>error</em> fails CI outright, so errors are zero on a green branch.</dd>
     <dt>⚠ source missing</dt>

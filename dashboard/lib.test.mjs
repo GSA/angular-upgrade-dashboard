@@ -416,6 +416,15 @@ test('a null lint declaration resolves to not-published', () => {
   assert.equal(resolveLint({ metrics: { lint: null } }).state, 'not-published');
 });
 
+// A repo that runs lint in CI but commits no debt count is "enforced", not
+// "not-published" — the two facts ("nothing to measure" vs "we don't measure
+// it yet") must render differently so a real gap in the dashboard's own
+// coverage isn't confused with an absent check.
+test('a lint declaration of `true` resolves to enforced, distinct from not-published', () => {
+  assert.equal(resolveLint({ metrics: { lint: true } }).state, 'enforced');
+  assert.equal(resolveLint({ metrics: { lint: false } }).state, 'not-published');
+});
+
 test('a11y resolves from the declared boolean', () => {
   assert.equal(resolveA11y({ metrics: { a11y: true } }).enforced, true);
   assert.equal(resolveA11y({ metrics: { a11y: false } }).enforced, false);
