@@ -16,7 +16,7 @@ export const LIBRARIES = [
       // --threshold=90`), a different metric from line coverage, and commits
       // no result file. Reported as "not published" until it does.
       coverage: null,
-      lint: true, // stylelint runs in CI (test.yml) but commits no debt baseline — GSA/sam-styles#823
+      lint: { kind: 'stylelint-baseline', path: 'stylelint-baseline.json' }, // GSA/sam-styles#823, landed via #824
       a11y: true, // playwright.a11y.config.mjs — WCAG 2.1 AA gate
     },
   },
