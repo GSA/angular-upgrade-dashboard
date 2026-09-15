@@ -63,30 +63,6 @@ query($owner: String!, $repo: String!, $number: Int!, $packageExpression: String
   }
 }`;
 
-// A repo-only variant of the query above: same metric blobs and last-commit
-// date, but no `issue` field. Used for libraries with no epic filed yet
-// (sam-design-system) so they still get a metrics row and a staleness date.
-const REPO_QUERY = `
-query($owner: String!, $repo: String!, $packageExpression: String!, $coverageExpression: String!, $lintExpression: String!) {
-  repository(owner: $owner, name: $repo) {
-    description
-    packageJson: object(expression: $packageExpression) {
-      ... on Blob { text }
-    }
-    coverageSource: object(expression: $coverageExpression) {
-      ... on Blob { text }
-    }
-    lintSource: object(expression: $lintExpression) {
-      ... on Blob { text }
-    }
-    defaultBranchRef {
-      target {
-        ... on Commit { committedDate }
-      }
-    }
-  }
-}`;
-
 function ghGraphql(query, variables) {
   const args = ['api', 'graphql', '-f', `query=${query}`];
   for (const [k, v] of Object.entries(variables)) {
@@ -146,23 +122,8 @@ function fetchEpic(lib) {
   };
 }
 
-// Libraries with no epic still need repo-level data: sam-design-system's
-// 15-months-stale last commit is one of the more useful facts on the page.
-function fetchRepo(lib) {
-  const res = ghGraphql(REPO_QUERY, {
-    owner: 'GSA',
-    repo: lib.repo,
-    ...metricVariables(lib),
-  });
-  const repository = res?.data?.repository;
-  if (!repository) throw new Error(`No repository GSA/${lib.repo}`);
-  return { ...lib, ...repoFields(repository) };
-}
-
 function buildLibraries() {
-  return orderLibraries(LIBRARIES).map((lib) =>
-    lib.epic ? fetchEpic(lib) : fetchRepo(lib),
-  );
+  return orderLibraries(LIBRARIES).map(fetchEpic);
 }
 
 // A broken metric source is reported but does NOT fail the build: the epic

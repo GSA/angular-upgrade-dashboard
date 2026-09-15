@@ -74,15 +74,19 @@ export const LIBRARIES = [
   {
     repo: 'sam-design-system',
     order: 4,
-    epic: null,
+    // Final library in the upgrade dependency graph. Its multi-package
+    // modernization and 17→21 migration are tracked by #1600.
+    epic: { owner: 'GSA', number: 1600 },
     angularParentNumber: null,
+    // The migration train is spread across direct issues rather than hung from
+    // one per-major parent: 19→20, Formly 6→7, Karma→Vitest/coverage, 20→21.
+    angularIssueNumbers: [1614, 1615, 1616, 1617],
     // Curated fallback (see ngx-uswds-icons note above).
     fallbackDescription:
       'SAM Design System — the unified Angular component library.',
-    // Not yet instrumented: CircleCI, no committed metrics, no upgrade epic,
-    // and nothing shipped on the default branch since 2025-01. Kept in the
-    // grid as an all-"not published" row because that staleness is itself the
-    // finding — dropping the row would hide it.
+    // Not yet instrumented: CircleCI, no committed metrics, and nothing
+    // shipped on the default branch since 2025-01. Keep the all-"not
+    // published" row: that staleness is itself a useful finding.
     metrics: { coverage: null, lint: null, a11y: false },
   },
 ];

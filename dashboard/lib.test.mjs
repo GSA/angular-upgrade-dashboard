@@ -123,6 +123,25 @@ test('classifyTracks counts a flat angularIssueNumbers set as the Angular track'
   assert.deepEqual(angular, { closed: 1, total: 3 });
 });
 
+// sam-design-system #1600 also uses a flat Angular migration train: #1614,
+// #1615, #1616, and #1617. Its other 14 direct sub-issues are pipeline work.
+test('classifyTracks separates the sam-design-system migration train from pipeline work', () => {
+  const epic = {
+    angularIssueNumbers: [1614, 1615, 1616, 1617],
+    subIssues: [
+      ...Array.from({ length: 13 }, (_, i) => ({ number: 1601 + i, state: 'OPEN' })),
+      { number: 1614, state: 'OPEN' },
+      { number: 1615, state: 'OPEN' },
+      { number: 1616, state: 'OPEN' },
+      { number: 1617, state: 'OPEN' },
+      { number: 1618, state: 'OPEN' },
+    ],
+  };
+  const { pipeline, angular } = classifyTracks(epic);
+  assert.deepEqual(pipeline, { closed: 0, total: 14 });
+  assert.deepEqual(angular, { closed: 0, total: 4 });
+});
+
 // A started repo shows two track rollups. ngx-uswds-icons: Pipeline 6/8 and
 // Angular 0/4, each as a rollup bar/badge.
 test('a started repo renders Pipeline and Angular rollup badges', () => {
@@ -292,14 +311,14 @@ test('renderDescription falls back to the curated description when live is null'
   assert.match(html, /USWDS icons packaged as Angular components\./);
 });
 
-// Libraries with no epic filed render as "not started".
+// A library with no epic filed renders as "not started".
 test('an unstarted repo renders "not started"', () => {
-  const html = renderLibrary({ repo: 'sam-design-system', epic: null });
+  const html = renderLibrary({ repo: 'unstarted-library', epic: null });
   assert.match(html, /not started/i);
   assert.doesNotMatch(html, /role="progressbar"/);
 });
 
-// The full page assembles all five libraries in order with started + unstarted.
+// The full page assembles all five libraries in dependency order.
 test('renderPage emits all five libraries in dependency order', () => {
   const libs = orderLibraries(LIBRARIES).map((lib) => ({
     ...lib,
