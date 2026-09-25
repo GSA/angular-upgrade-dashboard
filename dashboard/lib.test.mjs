@@ -80,6 +80,23 @@ test('Pipeline track counts every direct sub-issue except the Angular parent', (
   assert.equal(styles.angular, null);
 });
 
+test('classifyTracks handles missing subIssues gracefully', () => {
+  assert.deepEqual(classifyTracks({}), {
+    pipeline: { closed: 0, total: 0 },
+    angular: null,
+  });
+  assert.deepEqual(
+    classifyTracks({
+      angularParentNumber: 1,
+      subIssues: [{ number: 1, state: 'OPEN' }],
+    }),
+    {
+      pipeline: { closed: 0, total: 0 },
+      angular: { closed: 0, total: 0 },
+    },
+  );
+});
+
 // Libraries render in dependency order:
 // sam-styles -> ngx-uswds-icons -> ngx-uswds / sam-ui-elements -> sam-design-system
 test('libraries render in dependency order', () => {
@@ -218,6 +235,7 @@ test('angularMajor returns null when Angular is absent or input is bad', () => {
   assert.equal(angularMajor(''), null);
   assert.equal(angularMajor('{ not json'), null);
   assert.equal(angularMajor(JSON.stringify({ dependencies: { rxjs: '^7.0.0' } })), null);
+  assert.equal(angularMajor(JSON.stringify({ dependencies: { '@angular/core': 'next' } })), null);
 });
 
 // A started card shows the repo description and an "Angular N" badge when the
@@ -420,6 +438,15 @@ test('a coverage badge whose label format changed resolves to missing', () => {
   assert.equal(cell.state, 'missing');
 });
 
+test('a coverage declaration with an unknown kind resolves to missing', () => {
+  const cell = resolveCoverage({
+    metrics: { coverage: { kind: 'unsupported', path: 'coverage.xml' } },
+    coverageSource: '<xml></xml>',
+  });
+  assert.equal(cell.state, 'missing');
+  assert.match(cell.reason, /unknown coverage kind "unsupported"/);
+});
+
 // Per-workspace warning counts are summed so the row stays comparable with the
 // other libraries; sam-ui-elements is {root: 1619, test-app: 4} = 1623.
 test('lint baseline sums per-workspace warning counts', () => {
@@ -442,6 +469,22 @@ test('a null lint declaration resolves to not-published', () => {
 test('a lint declaration of `true` resolves to enforced, distinct from not-published', () => {
   assert.equal(resolveLint({ metrics: { lint: true } }).state, 'enforced');
   assert.equal(resolveLint({ metrics: { lint: false } }).state, 'not-published');
+});
+
+test('a malformed lint baseline resolves to missing', () => {
+  const badJson = resolveLint({
+    metrics: { lint: { kind: 'eslint-baseline', path: 'eslint-baseline.json' } },
+    lintSource: 'not json{',
+  });
+  assert.equal(badJson.state, 'missing');
+  assert.match(badJson.reason, /not valid JSON/);
+
+  const noNumbers = resolveLint({
+    metrics: { lint: { kind: 'eslint-baseline', path: 'eslint-baseline.json' } },
+    lintSource: JSON.stringify({ root: 'many', 'test-app': null }),
+  });
+  assert.equal(noNumbers.state, 'missing');
+  assert.match(noNumbers.reason, /no numeric workspace counts/);
 });
 
 test('a11y resolves from the declared boolean', () => {
@@ -509,11 +552,27 @@ test('the metrics table renders each cell state distinctly', () => {
         metrics: { coverage: { kind: 'floor', path: 'coverage-floor.json' }, lint: null, a11y: false },
         coverageSource: null,
       },
+      {
+        repo: 'warned & counted',
+        order: 3,
+        metrics: {
+          coverage: { kind: 'badge', path: '.github/badges/coverage.svg' },
+          lint: { kind: 'eslint-baseline', path: 'eslint-baseline.json' },
+          a11y: true,
+        },
+        coverageSource:
+          '<svg aria-label="coverage: 99.5%"><title>coverage: 99.5%</title></svg>',
+        lintSource: JSON.stringify({ root: 1619, 'test-app': 4 }),
+      },
     ],
     '2026-09-08T12:00:00.000Z',
   );
   assert.match(html, /94% floor/);
   assert.match(html, /statements 94% · branches 91% · functions 90%/);
+  assert.match(html, /99\.5% actual/);
+  assert.match(html, /1,623 baseline warnings/);
+  assert.match(html, /0 errors/);
+  assert.match(html, /warned &amp; counted/);
   assert.match(html, /WCAG 2\.1 AA enforced/);
   assert.match(html, /not enforced/);
   assert.match(html, /not published/);
