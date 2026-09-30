@@ -1,7 +1,7 @@
 // Pure, dependency-free helpers for the status dashboard.
 // generate.mjs fetches data via `gh api graphql` and feeds it to these.
 
-// The five design libraries in dependency order. `order` is the tie-broken
+// The six design libraries in dependency order. `order` is the tie-broken
 // rank; `epic` points at the live GSA epic (null = no epic filed yet). The
 // Angular parent sub-issue number is where the per-major upgrade chain hangs.
 export const LIBRARIES = [
@@ -74,7 +74,7 @@ export const LIBRARIES = [
   {
     repo: 'sam-design-system',
     order: 4,
-    // Final library in the upgrade dependency graph. Its multi-package
+    // Fifth library in the upgrade dependency graph. Its multi-package
     // modernization and 17→21 migration are tracked by #1600.
     epic: { owner: 'GSA', number: 1600 },
     angularParentNumber: null,
@@ -87,6 +87,23 @@ export const LIBRARIES = [
     // Not yet instrumented: CircleCI, no committed metrics, and nothing
     // shipped on the default branch since 2025-01. Keep the all-"not
     // published" row: that staleness is itself a useful finding.
+    metrics: { coverage: null, lint: null, a11y: false },
+  },
+  {
+    repo: 'sam-layouts',
+    order: 5,
+    // Sixth and final public design library in the upgrade dependency graph.
+    // Modernization and 19→21 migration are tracked by #52.
+    epic: { owner: 'GSA', number: 52 },
+    angularParentNumber: null,
+    // The Angular migration train (Wave 3: 19→20, Jest→Vitest, 20→21) will be
+    // tracked by direct sub-issues once filed.
+    angularIssueNumbers: [],
+    fallbackDescription:
+      'SAM Layouts — page layout components and templates for SAM.gov.',
+    // Not yet instrumented: zero CI workflows on main, no test target, and no
+    // committed metrics. Kept in the grid as an all-"not published" row until
+    // Wave 2/3 land CI, coverage floor, and lint baseline.
     metrics: { coverage: null, lint: null, a11y: false },
   },
 ];
@@ -130,7 +147,7 @@ export function classifyTracks(epic) {
   if (parent) {
     // Per-major parent rolled up over its own children.
     angular = rollup(parent.subIssues ?? []);
-  } else if (angularNumbers.size > 0) {
+  } else if (Array.isArray(epic.angularIssueNumbers)) {
     // Flat set of direct sub-issues counted as the Angular track.
     angular = rollup(direct.filter((i) => angularNumbers.has(i.number)));
   }
@@ -246,7 +263,7 @@ export function resolveCoverage(lib) {
  * (`check-lint-baseline.mjs`) fails on any ESLint error, so errors are 0 by
  * construction on a green default branch. Per-workspace counts are summed so
  * the row stays comparable with the others; the split is a library-internal
- * detail that belongs in its epic, not a five-repo comparison table.
+ * detail that belongs in its epic, not a six-repo comparison table.
  *
  * `metrics.lint` can be:
  *   - a declared source ({kind, path})        → a real warning count
@@ -370,7 +387,7 @@ function renderDescription(lib) {
 function renderAngularVersion(lib) {
   const angularTracked =
     lib.angularParentNumber != null ||
-    (lib.angularIssueNumbers?.length ?? 0) > 0;
+    Array.isArray(lib.angularIssueNumbers);
   if (!angularTracked) return '';
   const label =
     typeof lib.angularVersion === 'number'

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Status dashboard generator — self-contained, no runtime dependencies.
 //
-// Fetches the two live public GSA/* epics (and their sub-issues) via
+// Fetches the live public GSA/* epics (and their sub-issues) via
 // `gh api graphql` using the workflow's built-in GITHUB_TOKEN (sufficient for
 // public reads), then renders a static HTML page. Run:
 //   node dashboard/generate.mjs [outfile]

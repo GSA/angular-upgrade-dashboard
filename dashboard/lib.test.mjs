@@ -98,7 +98,7 @@ test('classifyTracks handles missing subIssues gracefully', () => {
 });
 
 // Libraries render in dependency order:
-// sam-styles -> ngx-uswds-icons -> ngx-uswds / sam-ui-elements -> sam-design-system
+// sam-styles -> ngx-uswds-icons -> ngx-uswds / sam-ui-elements -> sam-design-system -> sam-layouts
 test('libraries render in dependency order', () => {
   const order = orderLibraries(LIBRARIES).map((l) => l.repo);
   assert.deepEqual(order, [
@@ -107,6 +107,7 @@ test('libraries render in dependency order', () => {
     'ngx-uswds',
     'sam-ui-elements',
     'sam-design-system',
+    'sam-layouts',
   ]);
 });
 
@@ -157,6 +158,24 @@ test('classifyTracks separates the sam-design-system migration train from pipeli
   const { pipeline, angular } = classifyTracks(epic);
   assert.deepEqual(pipeline, { closed: 0, total: 14 });
   assert.deepEqual(angular, { closed: 0, total: 4 });
+});
+
+// An empty angularIssueNumbers array indicates an Angular library whose
+// migration train issues have not been filed yet — treated as a 0/0 track.
+test('classifyTracks treats empty angularIssueNumbers as a started 0/0 Angular track', () => {
+  const epic = {
+    angularIssueNumbers: [],
+    subIssues: [
+      { number: 53, state: 'OPEN' },
+      { number: 54, state: 'OPEN' },
+      { number: 55, state: 'OPEN' },
+      { number: 56, state: 'OPEN' },
+      { number: 57, state: 'OPEN' },
+    ],
+  };
+  const { pipeline, angular } = classifyTracks(epic);
+  assert.deepEqual(pipeline, { closed: 0, total: 5 });
+  assert.deepEqual(angular, { closed: 0, total: 0 });
 });
 
 // A started repo shows two track rollups. ngx-uswds-icons: Pipeline 6/8 and
@@ -287,6 +306,31 @@ test('a flat-set Angular library (angularIssueNumbers) renders its version badge
   assert.match(html, /Angular 19/);
 });
 
+// A library with an empty angularIssueNumbers array still renders its version
+// badge and an Angular migration track (0 / 0), not N/A (SCSS).
+test('a library with empty angularIssueNumbers renders its version badge and 0/0 Angular track', () => {
+  const html = renderLibrary({
+    repo: 'sam-layouts',
+    angularParentNumber: null,
+    angularIssueNumbers: [],
+    epic: { owner: 'GSA', number: 52 },
+    description: null,
+    fallbackDescription: 'SAM Layouts — page layout components and templates for SAM.gov.',
+    angularVersion: 19,
+    subIssues: [
+      { number: 53, state: 'OPEN' },
+      { number: 54, state: 'OPEN' },
+      { number: 55, state: 'OPEN' },
+      { number: 56, state: 'OPEN' },
+      { number: 57, state: 'OPEN' },
+    ],
+  });
+  assert.match(html, /Angular 19/);
+  assert.match(html, /Angular migration/);
+  assert.match(html, /0\s*\/\s*0/);
+  assert.doesNotMatch(html, /N\/A\s*\(SCSS\)/);
+});
+
 // SCSS-only libraries (no Angular parent) show no version badge at all.
 test('a SCSS-only library shows no Angular version badge', () => {
   const html = renderLibrary({
@@ -336,8 +380,8 @@ test('an unstarted repo renders "not started"', () => {
   assert.doesNotMatch(html, /role="progressbar"/);
 });
 
-// The full page assembles all five libraries in dependency order.
-test('renderPage emits all five libraries in dependency order', () => {
+// The full page assembles all six libraries in dependency order.
+test('renderPage emits all six libraries in dependency order', () => {
   const libs = orderLibraries(LIBRARIES).map((lib) => ({
     ...lib,
     subIssues: lib.epic ? [] : undefined,
@@ -352,6 +396,7 @@ test('renderPage emits all five libraries in dependency order', () => {
     'ngx-uswds',
     'sam-ui-elements',
     'sam-design-system',
+    'sam-layouts',
   ].map((r) => page.indexOf(`>${r}<`));
   assert.ok(positions.every((p) => p !== -1), 'all libraries present');
   assert.deepEqual([...positions].sort((a, b) => a - b), positions);
