@@ -95,15 +95,14 @@ export const LIBRARIES = [
     // Sixth and final public design library in the upgrade dependency graph.
     // Modernization and 19→21 migration are tracked by #52.
     epic: { owner: 'GSA', number: 52 },
-    angularParentNumber: null,
-    // The Angular migration train (Wave 3: 19→20, Jest→Vitest, 20→21) will be
-    // tracked by direct sub-issues once filed.
-    angularIssueNumbers: [],
+    // The Angular migration train is tracked by #105 (Wave 3 parent),
+    // which has sub-issues #106 (19→20, CLOSED), #107 (Jest→Vitest),
+    // #108 (20→21), #109 (release). PR #116 landed Wave 3.1 (Angular 19→20).
+    angularParentNumber: 105,
     fallbackDescription:
       'SAM Layouts — page layout components and templates for SAM.gov.',
-    // Not yet instrumented: zero CI workflows on main, no test target, and no
-    // committed metrics. Kept in the grid as an all-"not published" row until
-    // Wave 2/3 land CI, coverage floor, and lint baseline.
+    // Wave 2 CI landed with coverage floor and lint baseline being committed
+    // during Wave 3 (#107). Metrics grid will be updated once they're published.
     metrics: { coverage: null, lint: null, a11y: false },
   },
 ];
