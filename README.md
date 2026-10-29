@@ -67,3 +67,28 @@ node --test 'dashboard/*.test.mjs'
 
 No generated HTML is committed; `dashboard/dist/` is git-ignored and produced
 only as a Pages artifact.
+
+## Dependabot sweep
+
+With Node and authenticated `gh` available, inspect open Dependabot PRs across
+all six `GSA` fleet repos without changing GitHub state:
+
+```bash
+node dashboard/dependabot-sweep.mjs
+node dashboard/dependabot-sweep.mjs --json --max-angular 21
+```
+
+The default Angular ceiling is **21**. Tables (or a JSON array) group PRs into
+`candidate`, `angular-blocked`, `pending`, and `red`. Only green CI PRs get
+base/head manifest and lockfile comparisons. Dependency ranges are judged by
+their minimum admitted version, so widening a peer range to `^21 || ^22` is
+not flagged. Lockfiles are compared per package key: a real major bump at an
+existing key is reported even if that major already exists elsewhere. A new
+key is treated as a move only when the same package/major disappears from
+another key. Each offending package is reported once per source file.
+
+Candidates still need human review—this script never approves or merges.
+Mergeability, `mergeStateStatus`, review decisions, failed checks, and offending
+Angular packages are included. `gh`/API failures, potentially truncated PR/check/
+file lists, and changed lockfiles without a `packages` object (v1) produce a
+non-zero exit; verified added/deleted files are treated as empty.
